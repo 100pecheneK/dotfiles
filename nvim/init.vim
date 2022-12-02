@@ -11,251 +11,286 @@ set expandtab
 set autoindent
 set fileformat=unix
 filetype indent on      " load filetype-specific indent files
+set termguicolors
+set scl=yes
+set colorcolumn=80
+" for tabulation
+set smartindent
+set tabstop=2
+set expandtab
+set shiftwidth=2
+set clipboard+=unnamedplus
+set autochdir
 
 inoremap jk <esc>
 
+nnoremap - :Explore<CR>
+let g:netrw_banner = 0
+let g:netrw_liststyle = 3
+let g:netrw_browse_split = 3
 
-call plug#begin('~/.vim/plugged')
+call plug#begin('~/.config/nvim/plugged')
+Plug 'nvim-lualine/lualine.nvim'
+Plug 'navarasu/onedark.nvim'
+Plug 'dracula/vim', { 'as': 'dracula' }
+" Plug 'justinmk/vim-sneak' " :help sneak
+Plug 'Pocco81/auto-save.nvim'
+" Plug 'airblade/vim-rooter'
 
+Plug 'tpope/vim-commentary'
+
+" JS/JSX/TS https://thoughtbot.com/blog/modern-typescript-and-react-development-in-vim
+Plug 'pangloss/vim-javascript'
+Plug 'leafgarland/typescript-vim'
+Plug 'peitalin/vim-jsx-typescript'
+Plug 'jparise/vim-graphql'
+Plug 'nvim-lua/plenary.nvim'
+Plug 'mxw/vim-jsx'
 Plug 'neovim/nvim-lspconfig'
-Plug 'hrsh7th/nvim-cmp'
+Plug 'onsails/lspkind-nvim'
 Plug 'hrsh7th/cmp-nvim-lsp'
-Plug 'saadparwaiz1/cmp_luasnip'
-Plug 'L3MON4D3/LuaSnip'
+Plug 'hrsh7th/cmp-buffer'
+Plug 'hrsh7th/cmp-path'
+Plug 'hrsh7th/cmp-cmdline'
+Plug 'hrsh7th/nvim-cmp'
+Plug 'nvim-treesitter/nvim-treesitter', {'do': ':TSUpdate'}
+Plug 'ray-x/go.nvim'
+Plug 'ray-x/guihua.lua'
 
+Plug 'prettier/vim-prettier', {
+  \ 'do': 'npm install --frozen-lockfile --production',
+  \ 'for': ['javascript', 'typescript', 'typescriptreact', 'javascriptreact', 'css', 'less', 'scss', 'json', 'graphql', 'markdown', 'vue', 'svelte', 'yaml', 'html'] }
+Plug 'bmatcuk/stylelint-lsp'
 
-" color schemas
-Plug 'morhetz/gruvbox'  " colorscheme gruvbox
-Plug 'mhartington/oceanic-next'  " colorscheme OceanicNext
-Plug 'kaicataldo/material.vim', { 'branch': 'main' }
-Plug 'ayu-theme/ayu-vim'
-
-" For JS/JSX
-Plug 'yuezk/vim-js'
-Plug 'maxmellon/vim-jsx-pretty'
+Plug 'nvim-telescope/telescope.nvim', { 'tag': '0.1.0' }
+Plug 'nvim-telescope/telescope-fzf-native.nvim', { 'do': 'make' }
 
 call plug#end()
 
+syntax on
+autocmd BufEnter *.{js,jsx,ts,tsx} :syntax sync fromstart
+autocmd BufLeave *.{js,jsx,ts,tsx} :syntax sync clear
 
-colorscheme material
-" colorschem OceanicNext
-"let g:material_terminal_italics = 1
-" variants: default, palenight, ocean, lighter, darker, default-community,
-"           palenight-community, ocean-community, lighter-community,
-"           darker-community
-"let g:material_theme_style = 'darker'
-"colorscheme material
-if (has('termguicolors'))
-  set termguicolors
-endif
+autocmd BufNewFile,BufRead *.tsx,*.jsx set filetype=typescriptreact
+colorscheme dracula
+let mapleader = "\<Space>"
 
-" variants: mirage, dark, dark
-"let ayucolor="mirage"
-"colorscheme ayu
+nnoremap <leader>f <cmd>Telescope find_files<cr>
+nnoremap <leader>g <cmd>Telescope live_grep<cr>
+nnoremap <leader>y "+y
+nnoremap <leader>, :nohlsearch<CR>
 
+nnoremap H gT
+nnoremap L gt
 
+let g:prettier#autoformat = 1
+let g:prettier#autoformat_require_pragma = 0
 
-" turn off search highlight
-nnoremap ,<space> :nohlsearch<CR>
-nmap –æ j
-nmap –ª k
-nmap —Ä h
-nmap –¥ l
-nmap —à i
-nmap —Ñ a
-nmap –≤ d
+" Disable quickfix window for prettier
+let g:prettier#quickfix_enabled = 0
 
+" Turn on vim-sneak
+" let g:sneak#label = 0
+
+"let g:onedark_config = {
+"  \ 'style': 'dark',
+"  \ 'toggle_style_key': '<leader>ts',
+"  \ 'ending_tildes': v:true,
+"  \ 'diagnostics': {
+"    \ 'darker': v:false,
+"    \ 'background': v:false,
+"  \ },
+"\ }
 
 lua << EOF
--- Set completeopt to have a better completion experience
-vim.o.completeopt = 'menuone,noselect'
+local status, nvim_lsp = pcall(require, "lspconfig")
+if (not status) then return end
 
--- luasnip setup
-local luasnip = require 'luasnip'
+local protocol = require('vim.lsp.protocol')
 
--- nvim-cmp setup
-local cmp = require 'cmp'
-cmp.setup {
-  completion = {
-    autocomplete = false
-  },
-  snippet = {
-    expand = function(args)
-      require('luasnip').lsp_expand(args.body)
-    end,
-  },
-  mapping = {
-    ['<C-p>'] = cmp.mapping.select_prev_item(),
-    ['<C-n>'] = cmp.mapping.select_next_item(),
-    ['<C-d>'] = cmp.mapping.scroll_docs(-4),
-    ['<C-f>'] = cmp.mapping.scroll_docs(4),
-    ['<C-Space>'] = cmp.mapping.complete(),
-    ['<C-e>'] = cmp.mapping.close(),
-    ['<CR>'] = cmp.mapping.confirm {
-      behavior = cmp.ConfirmBehavior.Replace,
-      select = true,
+local on_attach = function(client, bufnr)
+  -- format on save
+  if client.server_capabilities.documentFormattingProvider then
+    vim.api.nvim_create_autocmd("BufWritePre", {
+      group = vim.api.nvim_create_augroup("Format", { clear = true }),
+      buffer = bufnr,
+      callback = function() vim.lsp.buf.formatting_seq_sync() end
+    })
+  end
+end
+
+-- TypeScript
+nvim_lsp.tsserver.setup {
+  on_attach = on_attach,
+  filetypes = { "typescript", "typescriptreact", "typescript.tsx" },
+  cmd = { "typescript-language-server", "--stdio" }
+}
+ local cmp = require'cmp'
+
+  cmp.setup({
+    snippet = {
+      -- REQUIRED - you must specify a snippet engine
+      expand = function(args)
+        vim.fn["vsnip#anonymous"](args.body) -- For `vsnip` users.
+        -- require('luasnip').lsp_expand(args.body) -- For `luasnip` users.
+        -- require('snippy').expand_snippet(args.body) -- For `snippy` users.
+        -- vim.fn["UltiSnips#Anon"](args.body) -- For `ultisnips` users.
+      end,
     },
-    ['<Tab>'] = function(fallback)
-      if vim.fn.pumvisible() == 1 then
-        vim.fn.feedkeys(vim.api.nvim_replace_termcodes('<C-n>', true, true, true), 'n')
-      elseif luasnip.expand_or_jumpable() then
-        vim.fn.feedkeys(vim.api.nvim_replace_termcodes('<Plug>luasnip-expand-or-jump', true, true, true), '')
-      else
-        fallback()
-      end
-    end,
-    ['<S-Tab>'] = function(fallback)
-      if vim.fn.pumvisible() == 1 then
-        vim.fn.feedkeys(vim.api.nvim_replace_termcodes('<C-p>', true, true, true), 'n')
-      elseif luasnip.jumpable(-1) then
-        vim.fn.feedkeys(vim.api.nvim_replace_termcodes('<Plug>luasnip-jump-prev', true, true, true), '')
-      else
-        fallback()
-      end
-    end,
+    window = {
+      -- completion = cmp.config.window.bordered(),
+      -- documentation = cmp.config.window.bordered(),
+    },
+    mapping = cmp.mapping.preset.insert({
+      ['<C-b>'] = cmp.mapping.scroll_docs(-4),
+      ['<C-f>'] = cmp.mapping.scroll_docs(4),
+      ['<C-Space>'] = cmp.mapping.complete(),
+      ['<C-e>'] = cmp.mapping.abort(),
+      ['<tab>'] = cmp.mapping.confirm({ select = true }), -- Accept currently selected item. Set `select` to `false` to only confirm explicitly selected items.
+    }),
+    sources = cmp.config.sources({
+      { name = 'nvim_lsp' },
+      { name = 'vsnip' }, -- For vsnip users.
+      -- { name = 'luasnip' }, -- For luasnip users.
+      -- { name = 'ultisnips' }, -- For ultisnips users.
+      -- { name = 'snippy' }, -- For snippy users.
+    }, {
+      { name = 'buffer' },
+    })
+  })
+
+  -- Set configuration for specific filetype.
+  cmp.setup.filetype('gitcommit', {
+    sources = cmp.config.sources({
+      { name = 'cmp_git' }, -- You can specify the `cmp_git` source if you were installed it.
+    }, {
+      { name = 'buffer' },
+    })
+  })
+
+  -- Use buffer source for `/` and `?` (if you enabled `native_menu`, this won't work anymore).
+  cmp.setup.cmdline({ '/', '?' }, {
+    mapping = cmp.mapping.preset.cmdline(),
+    sources = {
+      { name = 'buffer' }
+    }
+  })
+
+  -- Use cmdline & path source for ':' (if you enabled `native_menu`, this won't work anymore).
+  cmp.setup.cmdline(':', {
+    mapping = cmp.mapping.preset.cmdline(),
+    sources = cmp.config.sources({
+      { name = 'path' }
+    }, {
+      { name = 'cmdline' }
+    })
+  })
+
+  -- Set up lspconfig.
+  local capabilities = require('cmp_nvim_lsp').default_capabilities()
+  -- Replace <YOUR_LSP_SERVER> with each lsp server you've enabled.
+  require('lspconfig')['gopls'].setup {
+    capabilities = capabilities
+  }
+
+require('telescope').load_extension('fzf')
+-- lualine
+require('lualine').setup {
+  options = {
+    theme = 'dracula'
+    -- ... your lualine config
+  }
+}
+-- AUTOSAVE
+require("auto-save").setup({
+        enabled = true,
+            execution_message = {
+		    message = function() -- message to print on save
+			        return ("AutoSave: saved at " .. vim.fn.strftime("%H:%M:%S"))
+		        end,
+		        dim = 0.18, -- dim the color of `message`
+		        cleaning_interval = 1250, -- (milliseconds) automatically clean MsgArea after displaying `message`. See :h MsgArea
+	      },
+        events = {"InsertLeave"},
+        conditions = {
+            exists = true,
+            filename_is_not = {},
+            filetype_is_not = {},
+            modifiable = true
+        },
+        write_all_buffers = false,
+        on_off_commands = true,
+        clean_command_line_interval = 0,
+        debounce_delay = 135,
+})
+-- TELESCOPE
+  require('telescope').setup{ 
+    defaults = { file_ignore_patterns = {"node_modules"}
+  }} 
+local function telescope_buffer_dir()
+  return vim.fn.expand('%:p:h')
+end
+
+
+vim.api.nvim_create_autocmd("BufWritePre", {
+  pattern = "*.go",
+  callback = function()
+   require('go.format').goimport()
+  end,
+  group = format_sync_grp,
+})
+require('go').setup()
+vim.api.nvim_create_autocmd("BufWritePre", {
+  pattern = "*.go",
+  callback = function()
+   require('go.format').goimport()
+  end,
+  group = format_sync_grp,
+})
+
+-- ts
+local status, ts = pcall(require, "nvim-treesitter.configs")
+if (not status) then return end
+
+ts.setup {
+  highlight = {
+    enable = true,
+    disable = {},
   },
-  sources = {
-    { name = 'nvim_lsp' },
-    { name = 'luasnip' },
+  indent = {
+    enable = true,
+    disable = {},
+  },
+  ensure_installed = {
+    "tsx",
+    "json",
+    "css",
+    "html",
+    "lua",
+    "go"
+  },
+  autotag = {
+    enable = true,
+  },
+}
+
+local parser_config = require "nvim-treesitter.parsers".get_parser_configs()
+parser_config.tsx.filetype_to_parsername = { "javascript", "typescript.tsx" }
+
+lspconfig = require "lspconfig"
+util = require "lspconfig/util"
+
+lspconfig.gopls.setup {
+  cmd = {"gopls", "serve"},
+  filetypes = {"go", "gomod"},
+  root_dir = util.root_pattern("go.work", "go.mod", ".git"),
+  settings = {
+    gopls = {
+      analyses = {
+        unusedparams = true,
+      },
+      staticcheck = true,
+    },
   },
 }
 EOF
-
-
-
-
-lua << EOF
-local nvim_lsp = require('lspconfig')
-
--- Use an on_attach function to only map the following keys
--- after the language server attaches to the current buffer
-local on_attach = function(client, bufnr)
-
-  local function buf_set_keymap(...) vim.api.nvim_buf_set_keymap(bufnr, ...) end
-  local function buf_set_option(...) vim.api.nvim_buf_set_option(bufnr, ...) end
-
-  -- Enable completion triggered by <c-x><c-o>
-  buf_set_option('omnifunc', 'v:lua.vim.lsp.omnifunc')
-
-  -- Mappings.
-  local opts = { noremap=true, silent=true }
-
-  -- See `:help vim.lsp.*` for documentation on any of the below functions
-  buf_set_keymap('n', 'gD', '<cmd>lua vim.lsp.buf.declaration()<CR>', opts)
-  buf_set_keymap('n', 'gd', '<cmd>lua vim.lsp.buf.definition()<CR>', opts)
-  buf_set_keymap('n', 'K', '<cmd>lua vim.lsp.buf.hover()<CR>', opts)
-  buf_set_keymap('n', 'gi', '<cmd>lua vim.lsp.buf.implementation()<CR>', opts)
-  buf_set_keymap('n', '<C-k>', '<cmd>lua vim.lsp.buf.signature_help()<CR>', opts)
-  buf_set_keymap('n', '<space>wa', '<cmd>lua vim.lsp.buf.add_workspace_folder()<CR>', opts)
-  buf_set_keymap('n', '<space>wr', '<cmd>lua vim.lsp.buf.remove_workspace_folder()<CR>', opts)
-  buf_set_keymap('n', '<space>wl', '<cmd>lua print(vim.inspect(vim.lsp.buf.list_workspace_folders()))<CR>', opts)
-  buf_set_keymap('n', '<space>D', '<cmd>lua vim.lsp.buf.type_definition()<CR>', opts)
-  buf_set_keymap('n', '<space>rn', '<cmd>lua vim.lsp.buf.rename()<CR>', opts)
-  buf_set_keymap('n', '<space>ca', '<cmd>lua vim.lsp.buf.code_action()<CR>', opts)
-  buf_set_keymap('n', 'gr', '<cmd>lua vim.lsp.buf.references()<CR>', opts)
-  buf_set_keymap('n', '<space>e', '<cmd>lua vim.lsp.diagnostic.show_line_diagnostics()<CR>', opts)
-  buf_set_keymap('n', '[d', '<cmd>lua vim.lsp.diagnostic.goto_prev()<CR>', opts)
-  buf_set_keymap('n', ']d', '<cmd>lua vim.lsp.diagnostic.goto_next()<CR>', opts)
-  buf_set_keymap('n', '<space>q', '<cmd>lua vim.lsp.diagnostic.set_loclist()<CR>', opts)
-  buf_set_keymap('n', '<space>f', '<cmd>lua vim.lsp.buf.formatting()<CR>', opts)
-
-end
-
--- Use a loop to conveniently call 'setup' on multiple servers and
--- map buffer local keybindings when the language server attaches
-local servers = { 'pyright', 'rust_analyzer' }
-for _, lsp in ipairs(servers) do
-  nvim_lsp[lsp].setup {
-    on_attach = on_attach,
-    flags = {
-      debounce_text_changes = 150,
-    }
-  }
-end
-EOF
-
-
-
-" Delete buffer while keeping window layout (don't close buffer's windows).
-" Version 2008-11-18 from http://vim.wikia.com/wiki/VimTip165
-if v:version < 700 || exists('loaded_bclose') || &cp
-  finish
-endif
-let loaded_bclose = 1
-if !exists('bclose_multiple')
-  let bclose_multiple = 1
-endif
-
-" Display an error message.
-function! s:Warn(msg)
-  echohl ErrorMsg
-  echomsg a:msg
-  echohl NONE
-endfunction
-
-" Command ':Bclose' executes ':bd' to delete buffer in current window.
-" The window will show the alternate buffer (Ctrl-^) if it exists,
-" or the previous buffer (:bp), or a blank buffer if no previous.
-" Command ':Bclose!' is the same, but executes ':bd!' (discard changes).
-" An optional argument can specify which buffer to close (name or number).
-function! s:Bclose(bang, buffer)
-  if empty(a:buffer)
-    let btarget = bufnr('%')
-  elseif a:buffer =~ '^\d\+$'
-    let btarget = bufnr(str2nr(a:buffer))
-  else
-    let btarget = bufnr(a:buffer)
-  endif
-  if btarget < 0
-    call s:Warn('No matching buffer for '.a:buffer)
-    return
-  endif
-  if empty(a:bang) && getbufvar(btarget, '&modified')
-    call s:Warn('No write since last change for buffer '.btarget.' (use :Bclose!)')
-    return
-  endif
-  " Numbers of windows that view target buffer which we will delete.
-  let wnums = filter(range(1, winnr('$')), 'winbufnr(v:val) == btarget')
-  if !g:bclose_multiple && len(wnums) > 1
-    call s:Warn('Buffer is in multiple windows (use ":let bclose_multiple=1")')
-    return
-  endif
-  let wcurrent = winnr()
-  for w in wnums
-    execute w.'wincmd w'
-    let prevbuf = bufnr('#')
-    if prevbuf > 0 && buflisted(prevbuf) && prevbuf != btarget
-      buffer #
-    else
-      bprevious
-    endif
-    if btarget == bufnr('%')
-      " Numbers of listed buffers which are not the target to be deleted.
-      let blisted = filter(range(1, bufnr('$')), 'buflisted(v:val) && v:val != btarget')
-      " Listed, not target, and not displayed.
-      let bhidden = filter(copy(blisted), 'bufwinnr(v:val) < 0')
-      " Take the first buffer, if any (could be more intelligent).
-      let bjump = (bhidden + blisted + [-1])[0]
-      if bjump > 0
-        execute 'buffer '.bjump
-      else
-        execute 'enew'.a:bang
-      endif
-    endif
-  endfor
-  execute 'bdelete'.a:bang.' '.btarget
-  execute wcurrent.'wincmd w'
-endfunction
-command! -bang -complete=buffer -nargs=? Bclose call <SID>Bclose(<q-bang>, <q-args>)
-nnoremap <silent> <Leader>bd :Bclose<CR>
-
-
-map gn :bn<cr>
-map gp :bp<cr>
-map gw :Bclose<cr>
-
-set colorcolumn=79
-
-" run current script with python3 by CTRL+R in command and insert mode
-autocmd FileType python map <buffer> <C-r> :w<CR>:exec '!python3' shellescape(@%, 1)<CR>
-autocmd FileType python imap <buffer> <C-r> <esc>:w<CR>:exec '!python3' shellescape(@%, 1)<CR>e
